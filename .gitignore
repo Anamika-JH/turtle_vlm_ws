@@ -1,0 +1,10 @@
+# ROS build artifacts
+build/
+devel/
+logs/
+**/__pycache__/
+*.pyc
+
+# model weights
+src/turtle_vlm_chat/models/*.pt
+src/turtle_vlm_chat/models/*.pth

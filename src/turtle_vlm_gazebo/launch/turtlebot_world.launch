@@ -1,0 +1,22 @@
+<launch>
+  <!-- Set TurtleBot3 model (burger, waffle, waffle_pi) -->
+  <arg name="model" default="burger"/>
+
+  <!-- Load the TurtleBot3 URDF -->
+  <param name="robot_description" 
+         command="$(find xacro)/xacro $(find turtlebot3_description)/urdf/turtlebot3_$(arg model).urdf.xacro" />
+
+  <!-- Launch Gazebo with the CPS world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find turtle_vlm_gazebo)/worlds/gazebo_worlds/cps_world.world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+    <arg name="gui" value="true"/>
+  </include>
+
+  <!-- Spawn the TurtleBot3 robot into the world -->
+  <node name="spawn_urdf" pkg="gazebo_ros" type="spawn_model"
+        args="-param robot_description -urdf -model turtlebot3
+              -x 0 -y 0 -z 0.1"
+        output="screen"/>
+</launch>

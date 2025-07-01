@@ -1,0 +1,146 @@
+destinations:
+  conference_office:
+    aliases:
+    - conference
+    - meeting room
+    coords:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    display_name: Conference Office
+  corridor:
+    aliases:
+    - hallway
+    - passage
+    coords:
+      x: -2.9519989
+      y: -4.613533
+      z: 0.0
+    display_name: Corridor
+  elevator:
+    aliases:
+    - elevator
+    coords:
+      x: 11.79615
+      y: -11.28947
+      z: 0.0
+    display_name: Elevator
+  kitchen:
+    aliases:
+    - kitchen
+    coords:
+      x: 5.3120069
+      y: -13.078762
+      z: 0.0
+    display_name: Kitchen
+  lab_assistance_office:
+    aliases:
+    - Lab Assistant
+    - lab assistance office
+    coords:
+      x: -8.2274
+      y: 2.0348
+      z: 0.0
+    display_name: Lab assistance's Office
+  phd_office:
+    aliases:
+    - phd office
+    - doctoral researchers' office
+    - phd students office
+    coords:
+      x: -18.2438
+      y: -11.7617
+      z: 0.0
+    display_name: PhD's Office
+  postdoc_office:
+    aliases:
+    - postdoc
+    - postdoc office
+    coords:
+      x: -12.3221
+      y: -10.2211
+      z: 0.0
+    display_name: Postdoc's Office
+  printing_room:
+    aliases:
+    - print room
+    - printing
+    coords:
+      x: -15.81148
+      y: -4.734699
+      z: 0.0
+    display_name: Printing Room
+  professor_office:
+    aliases:
+    - professor
+    - prof office
+    coords:
+      x: -1.8086
+      y: -12.5759
+      z: 0.0
+    display_name: Professor Office
+  secretary_office:
+    aliases:
+    - secretary
+    - admin office
+    coords:
+      x: -7.488
+      y: -11.7599
+      z: 0.0
+    display_name: Secretary Office
+  server_room:
+    aliases:
+    - server
+    - server-room
+    - it room
+    - servers
+    coords:
+      x: 6.41663
+      y: 1.8381
+      z: 0.0
+    display_name: Server Room
+  students_office:
+    aliases:
+    - students
+    - student office
+    - students' office
+    - students office
+    coords:
+      x: -18.3597
+      y: 1.2639
+      z: 0.0
+    display_name: Students Office
+  technicians_office:
+    aliases:
+    - technicians
+    - tech office
+    coords:
+      x: 6.41663
+      y: 1.8381
+      z: 0.0
+    display_name: Technicians Office
+  toilet:
+    aliases:
+    - restroom
+    - bathroom
+    coords:
+      x: 14.8095
+      y: -2.6749
+      z: 0.0
+    display_name: Toilet
+  tree:
+    aliases:
+    - tree
+    coords:
+      x: 11.52289
+      y: 8.69468
+      z: 0.0
+    display_name: Tree
+  workshop:
+    aliases:
+    - workshop
+    coords:
+      x: -12.1681
+      y: 1.61361
+      z: 0.0
+    display_name: Workshop

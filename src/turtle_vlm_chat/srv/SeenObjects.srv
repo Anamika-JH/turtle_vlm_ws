@@ -1,0 +1,5 @@
+# SeenObjects.srv
+# Service to return JSON-encoded memory of recently seen objects
+
+---
+string memory_json
