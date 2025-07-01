@@ -24,4 +24,3 @@ turtle_vlm_ws/
 │   ├── turtle_vlm_perception/       # Placeholder for future C++/CUDA nodes
 │   └── turtlebot3_description_custom/  # Custom URDF for TurtleBot3 + Realsense
 ├── frames.gv
-└── frames.pdf                       # TF tree snapshots
