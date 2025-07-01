@@ -24,3 +24,49 @@ turtle_vlm_ws/
 │   ├── turtle_vlm_perception/       # Placeholder for future C++/CUDA nodes
 │   └── turtlebot3_description_custom/  # Custom URDF for TurtleBot3 + Realsense
 └── frames.gv
+
+
+### Key scripts
+
+| Path | Purpose |
+|------|---------|
+| `turtle_vlm_chat/scripts/vlm_node_yolo.py` | Runs YOLO v8, estimates 3-D poses, maintains “seen objects” memory |
+| `turtle_vlm_chat/scripts/llm_to_goal_node.py` | Converts parsed LLM actions into real robot motion |
+| `turtle_vlm_chat/scripts/llm_node.py` | Thin wrapper that posts prompts to your chosen LLM endpoint (OpenAI, Ollama, …) |
+| `turtle_vlm_chat/scripts/chatGUI_SR.py` | Desktop GUI with speech recognition (Google) & TTS (gTTS / pyttsx3) |
+
+---
+
+## ⚡ Quick-start (simulation)
+
+> Tested on **Ubuntu 20.04 + ROS Noetic + Python 3.8**.
+
+```bash
+# 1. clone (already done if you're reading this from your repo clone)
+git clone git@github.com:Anamika-JH/turtle_vlm_ws.git
+cd turtle_vlm_ws
+
+# 2. download YOLO + CLIP + SAM checkpoints (~500 MB total)
+src/turtle_vlm_chat/models/download_models.sh
+
+# 3. install missing Python deps (virtualenv recommended)
+pip install -r src/turtle_vlm_chat/requirements.txt
+
+# 4. build workspace
+catkin_make
+source devel/setup.bash
+
+# 5. launch Gazebo world + navigation stack
+roslaunch turtle_vlm_gazebo nav_sim.launch
+
+# 6. start perception
+rosrun turtle_vlm_chat vlm_node_yolo.py
+
+# 7. start LLM interface (edit API key env vars first!)
+rosrun turtle_vlm_chat llm_node.py
+
+# 8. start action executor
+rosrun turtle_vlm_chat llm_to_goal_node.py
+
+# 9. optional: start the chat GUI
+rosrun turtle_vlm_chat chatGUI_SR.py
