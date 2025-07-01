@@ -14,7 +14,7 @@ A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 
 
 ---
 
-### 📁 Directory layout
+### Directory layout
 ```text
 turtle_vlm_ws/
 ├── .catkin_workspace
@@ -37,7 +37,7 @@ turtle_vlm_ws/
 
 ---
 
-## ⚡ Quick-start (simulation)
+## Quick-start (simulation)
 
 > Tested on **Ubuntu 20.04 + ROS Noetic + Python 3.8**.
 
