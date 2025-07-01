@@ -70,3 +70,14 @@ rosrun turtle_vlm_chat llm_to_goal_node.py
 
 # 9. optional: start the chat GUI
 rosrun turtle_vlm_chat chatGUI_SR.py
+
+## License
+
+This repository is released under the **[MIT License](LICENSE)**.
+
+All third-party model checkpoints keep their original licenses:
+
+- **YOLO v8** – © Ultralytics  
+- **CLIP** – © OpenAI  
+- **SAM** – © Meta AI  
+- **MiDaS** – © Intel ISL
