@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from ultralytics import YOLO              
-
+from std_srvs.srv import Empty, EmptyResponse
 from sensor_msgs.msg import Image
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, PointStamped, Point, Pose, Quaternion
@@ -24,7 +24,7 @@ from scipy import ndimage
 import message_filters
 from turtle_vlm_chat.srv import SeenObjects, SeenObjectsResponse
 from sensor_msgs import point_cloud2
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +80,7 @@ class DepthEstimator:
         x = (u - self.cx) * depth / self.fx
         y = (v - self.cy) * depth / self.fy
         z = depth
+        rospy.loginfo(f"[DEBUG] pixel=({u},{v})  depth={depth:.2f} m")
         return np.array([x, y, z])
 
     def get_valid_depth_value(self, depth_image, x, y, radius=5):
@@ -141,17 +142,30 @@ class PerceptionModule:
             mono_transform=self.mono_transform,
             device=self.device
         )
-        self.base_frame = rospy.get_param("perception/base_frame", "camera_face")
-        self.camera_frame = rospy.get_param("perception/camera_frame", "camera_optical_face")
+        self.base_frame = rospy.get_param("perception/base_frame", "base_footprint")
+        self.camera_frame = rospy.get_param("perception/camera_frame", "realsense_link_optical")
         self.seen_objects = {}
         self.image_publisher = rospy.Publisher("/llm_image_output", Image, queue_size=10)
         self.overlay_publisher = rospy.Publisher("/perception/yolo_overlay", Image, queue_size=1)
+        rospy.Subscriber(
+            "/perception/request_image",
+            String,
+            lambda _msg: self.send_latest_image(),
+            queue_size=1
+        )
+        
         self.setup_subscribers()
 
-        self.detection_confidence_threshold = rospy.get_param("/perception/detection_confidence_threshold", 0.5)
+        self.detection_confidence_threshold = rospy.get_param("/perception/detection_confidence_threshold", 0.55)
         self.seen_objects_service = rospy.Service("/get_seen_objects", SeenObjects, self.handle_seen_objects_service)
         self.timer = rospy.Timer(rospy.Duration(1.5), self.periodic_detection_callback)
-
+        rospy.Service('/clear_seen_objects', Empty, self._srv_clear)
+    
+    def _srv_clear(self, req):
+        self.seen_objects.clear()
+        rospy.loginfo("[Perception] seen_objects cleared.")
+        return EmptyResponse()
+    
     def setup_subscribers(self):
         rgb_topic = rospy.get_param("topics/camera_color", "/camera/image_raw")
         depth_topic = rospy.get_param("topics/camera_depth", "/camera/depth/image_raw")
@@ -196,7 +210,7 @@ class PerceptionModule:
             label = self.yolo_model.names[cls_id]
 
 
-            BLACKLIST        = {"potted plant"}      
+            BLACKLIST        = {"potted plant", "cup", "umbrella"}     
             REMAP_TO_TRASH   = {"potted plant"}      # treat as trash-can
 
             if label in BLACKLIST:
