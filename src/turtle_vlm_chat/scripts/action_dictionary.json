@@ -18,6 +18,7 @@
       "navigate_to_detected_object": "(?i)(?:navigate|go|move|head)\\s+to\\s+the\\s+detected\\s+((?:\\w+\\s*)+)",
       "navigate_around_object": "(?i)(?:navigate|move|go|circle|drive) (?:around|round) (?:the )?detected (\\w+)(?: with (\\d+(\\.\\d+)?)m clearance)?",
       "navigate_around_generic": "(?i)(?:circle|go around|navigate around) (?:the )?(\\w+ \\w+)(?: with (\\d+(\\.\\d+)?)m clearance)?",
+      "list_destinations" : "(?i)^(what|which) (?:destinations|places|locations) (?:can|could) (?:you|the robot) (?:go|navigate) (?:to)?[?.]?$",
       "list_seen_objects"      : "(?i)^list(?: all)? seen objects[.,]?$",
       "look_around"            : "(?i)^look around[.,]?$",
       "report_object_position" : "(?i)^report (?:the )?position of (.+?)[.,]?$",
