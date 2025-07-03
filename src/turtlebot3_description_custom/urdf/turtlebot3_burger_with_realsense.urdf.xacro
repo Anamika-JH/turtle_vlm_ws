@@ -1,35 +1,32 @@
 <?xml version="1.0"?>
 <robot name="turtlebot3_burger_with_realsense" xmlns:xacro="http://ros.org/wiki/xacro">
 
-  <!-- Include default TurtleBot3 Burger -->
   <xacro:include filename="$(find turtlebot3_description)/urdf/turtlebot3_burger.urdf.xacro"/>
   <xacro:property name="camera_height" value="0.105"/>
 
-  <!-- Define gray material globally -->
+
   <material name="gray">
     <color rgba="0.5 0.5 0.5 1.0"/>
   </material>
 
-  <!-- Depth Camera Joint -->
   <joint name="realsense_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="realsense_link"/>
+    <child  link="realsense_link"/>
     <origin xyz="0.013 0 ${camera_height}" rpy="0 0 0"/>
   </joint>
 
-  <!-- Depth Camera Link -->
   <link name="realsense_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.02 0.02 0.02"/> 
+        <box size="0.02 0.02 0.02"/>
       </geometry>
       <material name="gray"/>
     </visual>
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.0 0.0 0.0"/>
+        <box size="0 0 0"/>
       </geometry>
     </collision>
     <inertial>
@@ -39,13 +36,25 @@
     </inertial>
   </link>
 
-  <!-- Gazebo Plugin: RGB-D Camera -->
+ 
+  <link name="realsense_link_optical"/>
+
+  <joint name="realsense_optical_joint" type="fixed">
+    <parent link="realsense_link"/>
+    <child  link="realsense_link_optical"/>
+    <!-- -90° about X then -90° about Z -->
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
+  </joint>
+
+
+  
   <gazebo reference="realsense_link">
     <sensor name="depth_camera" type="depth">
       <always_on>true</always_on>
       <update_rate>30.0</update_rate>
       <visualize>true</visualize>
       <pose>0 0 0.015 0 0 0</pose>
+
       <camera>
         <horizontal_fov>1.047</horizontal_fov>
         <image>
@@ -58,19 +67,26 @@
           <far>10.0</far>
         </clip>
       </camera>
+
       <plugin name="depth_camera_controller" filename="libgazebo_ros_openni_kinect.so">
         <alwaysOn>true</alwaysOn>
         <updateRate>30.0</updateRate>
+
+        <!-- topic roots -->
         <cameraName>camera</cameraName>
         <imageTopicName>image_raw</imageTopicName>
         <depthImageTopicName>depth/image_raw</depthImageTopicName>
         <cameraInfoTopicName>camera_info</cameraInfoTopicName>
         <depthCameraInfoTopicName>depth/camera_info</depthCameraInfoTopicName>
-        <frameName>realsense_link</frameName>
+
+        <!-- publish images in the optical frame -->
+        <frameName>realsense_link_optical</frameName>
       </plugin>
     </sensor>
   </gazebo>
+
   <gazebo reference="realsense_link">
     <material>Gazebo/Grey</material>
   </gazebo>
+
 </robot>
