@@ -6,10 +6,23 @@ import json
 import random
 import sys
 import os
+import rospkg
+import yaml
+import math, tf
 sys.path.append(os.path.dirname(__file__))
 from std_msgs.msg import String
 from tf import TransformListener
 from llm_interface import LLMInterface
+
+CARDINALS = [
+    "East", "North-East", "North", "North-West",
+    "West", "South-West", "South", "South-East"
+]
+
+
+def _yaw_to_cardinal(yaw_deg: float) -> str:
+    idx = int((yaw_deg + 22.5) // 45) % 8
+    return CARDINALS[idx]
 
 # ----------- Naturalization Helper -----------
 def naturalize_response(raw_response: str) -> str:
@@ -65,9 +78,17 @@ class LLMNode:
     def __init__(self):
         rospy.init_node("llm_node")
 
-        self.llm = LLMInterface(destinations={
-            "kitchen": {}, "secretary office": {}, "meeting room": {}
-        })
+        rospack   = rospkg.RosPack()
+        yaml_path = os.path.join(
+            rospack.get_path("turtle_vlm_chat"),
+            "config",
+            "destination.yaml"
+        )
+        with open(yaml_path) as f:
+            dest_yaml = yaml.safe_load(f)
+
+        # dest_yaml["destinations"] is the dict from the file
+        self.llm = LLMInterface(destinations=dest_yaml["destinations"])
         self.listener = TransformListener()
         self.cmd_pub = rospy.Publisher("/llm_command", String, queue_size=10)
         self.chat_pub = rospy.Publisher("/chat_response", String, queue_size=10)
@@ -94,15 +115,23 @@ class LLMNode:
 
     def get_position(self):
         try:
-            self.listener.waitForTransform("map", "base_footprint", rospy.Time(0), rospy.Duration(2.0))
-            (trans, _) = self.listener.lookupTransform("map", "base_footprint", rospy.Time(0))
+            self.listener.waitForTransform(
+                "map", "base_footprint", rospy.Time(0), rospy.Duration(0.5)
+            )
+            (trans, rot) = self.listener.lookupTransform(
+                "map", "base_footprint", rospy.Time(0)
+            )
+            _, _, yaw = tf.transformations.euler_from_quaternion(rot)
+            yaw_deg = math.degrees(yaw)
+
             return {
-                "position_x": str(trans[0]),
-                "position_y": str(trans[1]),
-                "position_z": str(trans[2]),
-                "current_yaw": "0",  # You can compute actual yaw if needed
-                "cardinal_direction": "unknown"
+                "position_x": f"{trans[0]:.3f}",
+                "position_y": f"{trans[1]:.3f}",
+                "position_z": f"{trans[2]:.3f}",
+                "current_yaw": f"{yaw_deg:.1f}",
+                "cardinal_direction": _yaw_to_cardinal(yaw_deg)
             }
+
         except Exception as e:
             rospy.logwarn(f"TF lookup failed: {e}")
             return {
