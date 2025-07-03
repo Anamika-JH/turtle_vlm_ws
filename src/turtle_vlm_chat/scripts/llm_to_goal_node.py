@@ -13,10 +13,10 @@ import os
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from turtle_vlm_chat.srv import SeenObjects
+from std_srvs.srv import Empty
 import yaml
 import json
 sys.path.append(os.path.join(os.path.dirname(__file__)))
-
 from commands_parser import CommandParser
 from destination_resolver import DestinationResolver
 
@@ -31,22 +31,29 @@ class LLMToGoalNode:
         self.img_req_pub  = rospy.Publisher("/perception/request_image", String, queue_size=1, latch=True)
         self.scan_req_pub = rospy.Publisher("/perception/force_detect", String, queue_size=1, latch=True)
         self.should_stop = False  
-        self.seen_objects = {}
         self.tf_listener = TransformListener()
         self.parser = CommandParser(action_executor=self)
         yaml_path = os.path.join(os.path.dirname(__file__), "../config/destination.yaml")
         self.destination_resolver = DestinationResolver(yaml_path)
         rospy.Subscriber("/llm_command", String, self.command_callback)
-
         rospy.loginfo("LLM to Goal Node Ready")
         rospy.spin()
 
+    
     def command_callback(self, msg):
         raw_command = msg.data.strip()
         rospy.loginfo(f"Received command: {raw_command}")
-        if "what objects have you seen" in raw_command.lower():
-            self.query_seen_objects()
+
+        # Direct phrase override (natural-language questions)
+        if any(phrase in raw_command.lower() for phrase in [
+            "what objects have you seen",
+            "which objects did you observe",
+            "what all you have seen",
+            "report object locations"
+        ]):
+            self.summarise_surroundings()
             return
+
         try:
             content = json.loads(raw_command)
         except json.JSONDecodeError:
@@ -54,9 +61,25 @@ class LLMToGoalNode:
 
         parsed = self.parser.parse_input({"type": "ACTIONS", "content": content})
         rospy.loginfo(f"Parsed: {parsed}")
+
+        #  Suppress robotic echo for informational-only commands
         if parsed['type'] == 'ACTIONS':
+            info_only = all(action['action'] in (
+                'LIST_SEEN_OBJECTS',
+                'DESCRIBE_SURROUNDINGS',
+                'REPORT_COORDINATES',
+                'REPORT_ORIENTATION'
+            ) for action in parsed['content'])
+
+            if info_only:
+                rospy.loginfo("Informational command detected — calling summarise_surroundings.")
+                self.summarise_surroundings()
+                return
+
+            # 🚀 Normal command
             for action in parsed['content']:
                 self.execute_action(action)
+
         elif parsed['type'] == 'RESPONSE':
             self.cmd_pub.publish(String(data=parsed['content']))
 
@@ -94,20 +117,22 @@ class LLMToGoalNode:
                 speed=action.get('speed', 0.2),
                 angle=action.get('angle', 360.0)
             )
-        elif act == "DESCRIBE_SURROUNDINGS":
-            self.describe_surroundings()
-        elif act == "LIST_SEEN_OBJECTS":
-            self.list_seen_objects()
-        elif act == "LOOK_AROUND":
-            self.trigger_perception_scan()
+        #elif act == "DESCRIBE_SURROUNDINGS":
+            #self.describe_surroundings()
+        elif act in ("DESCRIBE_SURROUNDINGS", "LOOK_AROUND"):
+            self.look_and_describe()
+        #elif act == "LOOK_AROUND":
+            #self.trigger_perception_scan()
         elif act == "FIND":
             object_name = action_args.get("object_name")
             self.search_for_object(object_name)
-        elif act == "REPORT_OBJECT_POSITION":
-            object_name = action_args.get("object_name")
-            self.report_object_position(object_name)
-        elif act == "REPORT_OBJECT_LOCATIONS":
-            self.report_object_locations()
+        elif act in ("LIST_SEEN_OBJECTS", "REPORT_OBJECT_LOCATIONS"):
+            self.summarise_surroundings()
+        elif act == "LIST_DESTINATIONS":
+            names = [d["display_name"]                       
+                    for d in self.destination_resolver.coords.values()]
+            msg = "I can navigate to: " + ", ".join(sorted(names)) + "."
+            self.speak_and_respond(msg)
         elif act == "MOVE_TO_OBJECT":
             object_name = action.get("object") or action.get("object_name")
             if not object_name:
@@ -116,6 +141,8 @@ class LLMToGoalNode:
             self.move_to_object(object_name)
         elif act == "REPORT_COORDINATES":
             self.report_position()
+        elif act == "SEND_IMAGE":
+            self.send_image()
         elif act == "GO_TO_COORDINATES":
             coords = action.get("coordinates", {})
             x = coords.get("x", 0.0)
@@ -269,24 +296,69 @@ class LLMToGoalNode:
             return "I haven't seen any confident objects recently."
     
     
-    def query_seen_objects(self):
-        rospy.wait_for_service('/get_seen_objects')
+    
+    def look_and_describe(self):
         try:
-            get_seen = rospy.ServiceProxy('/get_seen_objects', SeenObjects)
-            response = get_seen()
-            if response.memory_json:
-                seen_dict = yaml.safe_load(response.memory_json)
-                if not seen_dict:
-                    msg = "I haven't seen any objects recently."
-                else:
-                    msg = self.format_seen_objects_naturally(seen_dict)
-            else:
-                msg = "I haven't seen any objects recently."
-            rospy.loginfo(msg)
-            self.cmd_pub.publish(String(data=msg))
-        except rospy.ServiceException as e:
-            rospy.logwarn(f"Failed to query seen objects: {e}")
-            self.cmd_pub.publish(String(data="Could not retrieve seen objects."))
+            rospy.ServiceProxy('/clear_seen_objects', Empty)()
+        except rospy.ServiceException:
+            rospy.logwarn("Could not clear perception memory")
+
+        self.speak_and_respond("Looking around…")
+
+        self.rotate_degrees(360)                       
+        self.scan_req_pub.publish(String(data="scan")) 
+
+        # ----- wait UNTIL at least one brand-new detection appears -----
+        timeout     = rospy.Duration(5.0)              
+        start_time  = rospy.Time.now()
+        seen        = {}
+        while rospy.Time.now() - start_time < timeout:
+            seen = self._query_seen_service(max_age=None)  
+            if seen:                                      
+                break
+            rospy.sleep(0.25)
+
+        place_txt = self._current_place_string()
+        obj_txt   = self.format_seen_objects_naturally(seen) \
+                    if seen else "I don't detect any objects nearby."
+        self.speak_and_respond(f"{place_txt}\n{obj_txt}".strip())
+    
+    def _current_place_string(self, thresh=2.0) -> str:
+        """
+        Compare robot (x,y) with every destination in destination.yaml.
+        Return “I am in <name>” or an empty string.
+        """
+        try:
+            self.tf_listener.waitForTransform("map", "base_footprint",
+                                              rospy.Time(0), rospy.Duration(0.5))
+            (x, y, _) = self.tf_listener.lookupTransform(
+                "map", "base_footprint", rospy.Time(0))[0]
+        except Exception:
+            return ""
+
+        closest = None
+        best_d  = 1e9
+        for key, info in self.destination_resolver.coords.items():
+            dx = x - info["x"]
+            dy = y - info["y"]
+            d  = (dx*dx + dy*dy) ** 0.5
+            if d < best_d:
+                best_d = d
+                closest = info.get("display_name", key)
+
+        if best_d <= thresh:
+            return f"I’m currently in the {closest}."
+        return ""
+    
+    def send_image(self):
+        try:
+            self.img_req_pub.publish(String(data="send_now"))
+            self.speak_and_respond(
+                "Here is the image of my current surroundings.")
+        except Exception as e:
+            rospy.logerr(f"[LLM→Goal] Failed to request image: {e}")
+            self.speak_and_respond(
+                "I could not send an image at the moment.")
     
     def stop_motion(self):
         twist = Twist()
@@ -301,16 +373,20 @@ class LLMToGoalNode:
 
 
     # ----------  perception conveniences ------------------------------------------
-    def _query_seen_service(self, max_age=10.0):
-        """
-        Convenience wrapper around /get_seen_objects.
-        Returns a python dict[label] -> list[entries] or {} on failure.
-        """
+    def _query_seen_service(self, max_age: Optional[float] = None):
         rospy.wait_for_service('/get_seen_objects')
         try:
             srv = rospy.ServiceProxy('/get_seen_objects', SeenObjects)
             reply = srv()
-            return yaml.safe_load(reply.memory_json) or {}
+            data = yaml.safe_load(reply.memory_json) or {}
+            if max_age is None:            # ← show everything
+                return data
+            # else filter locally            (optional future-proofing)
+            now = rospy.Time.now().to_sec()
+            return {
+                k: [e for e in v if now - e["timestamp"] <= max_age]
+                for k, v in data.items()
+            }
         except Exception as e:
             rospy.logwarn(f"[LLM→Goal] /get_seen_objects failed: {e}")
             return {}
@@ -329,26 +405,10 @@ class LLMToGoalNode:
                 "I could not send an image at the moment.")
 
 
-    def describe_surroundings(self):
-        """
-        Turn the internal object memory into a short natural-language summary.
-        """
-        seen = self._query_seen_service(max_age=12.0)
+    def summarise_surroundings(self):
+        seen = self._query_seen_service(max_age=None)    
         text = self.format_seen_objects_naturally(seen)
         self.speak_and_respond(text)
-
-
-    def list_seen_objects(self):
-        """
-        A more concise variant – just enumerate labels.
-        """
-        seen = self._query_seen_service(max_age=60.0)
-        if not seen:
-            self.speak_and_respond("I haven't seen any objects recently.")
-            return
-        names = ", ".join(sorted(seen.keys()))
-        self.speak_and_respond(f"I have recently seen: {names}.")
-
 
     def trigger_perception_scan(self):
         
@@ -356,25 +416,40 @@ class LLMToGoalNode:
         self.speak_and_respond("Scanning my surroundings…")
 
 
-    # ----------  object-centric navigation helpers --------------------------------
-    def _lookup_object_pose(self, object_name: str) -> Optional[PoseStamped]:
+    def _lookup_object_pose(self,
+                            object_name: str,
+                            *,
+                            max_age: float = 30.0,
+                            min_conf: float = 0.20) -> Optional[PoseStamped]:
         """
-        Return the latest PoseStamped for `object_name` from the perception memory,
-        or None if not found or too old.
+        Return the most-recent PoseStamped for *object_name* from the perception
+        memory, or None if the object hasn’t been seen recently / confidently
+        enough.
         """
-        seen = self._query_seen_service(max_age=30.0)
-        for label, entries in seen.items():          # ← use the fresh dict
-            if object_name.lower() in label.lower():
-                latest = max(entries, key=lambda e: e['timestamp'])  # newest
-                p = latest["pose"]
-                pose = PoseStamped()
-                pose.header.stamp = rospy.Time.now()
-                pose.header.frame_id = "map"
-                pose.pose.position.x = p["x"]
-                pose.pose.position.y = p["y"]
-                pose.pose.position.z = p["z"]
-                pose.pose.orientation.w = 1.0
-                return pose
+        seen = self._query_seen_service(max_age=max_age)   # fresh snapshot
+
+        for label, entries in seen.items():
+            if object_name.lower() not in label.lower():
+                continue                                    # wrong object
+
+            # filter out very low-confidence observations
+            good_entries = [e for e in entries if e["confidence"] >= min_conf]
+            if not good_entries:                            # nothing left → skip
+                continue
+
+            latest = max(good_entries, key=lambda e: e["timestamp"])
+            p = latest["pose"]
+
+            pose = PoseStamped()
+            pose.header.stamp = rospy.Time.now()
+            pose.header.frame_id = "map"
+            pose.pose.position.x = p["x"]
+            pose.pose.position.y = p["y"]
+            pose.pose.position.z = p["z"]
+            pose.pose.orientation.w = 1.0
+            return pose
+
+        # no suitable entry found
         return None
 
 
@@ -409,35 +484,7 @@ class LLMToGoalNode:
         else:
             self.speak_and_respond(f"I do not have a position for {object_name}.")
 
-    def _refresh_seen_objects(self):
-        try:
-            get_seen = rospy.ServiceProxy('/get_seen_objects', SeenObjects)
-            response = get_seen()
-            if response.memory_json:
-                self.seen_objects = yaml.safe_load(response.memory_json)
-            else:
-                self.seen_objects = {}
-        except rospy.ServiceException as e:
-            rospy.logwarn(f"Failed to refresh seen objects: {e}")
-            self.seen_objects = {}
-    
-    def report_object_locations(self):
-        self._refresh_seen_objects()
-        if not self.seen_objects:
-            msg = "I have not detected any objects recently."
-        else:
-            lines = []
-            for label, infos in self.seen_objects.items():
-                for info in infos:
-                    pose = info["pose"]
-                    confidence = info["confidence"]
-                    lines.append(
-                        f"I saw {label} with {confidence:.2f} confidence at position "
-                        f"({pose['x']:.2f}, {pose['y']:.2f}, {pose['z']:.2f})."
-                    )
-            msg = "\n".join(lines)
-        rospy.loginfo(msg)
-        self.cmd_pub.publish(String(data=msg))
+
     
     def navigate_around_object(self, object_name, clearance=0.5):
         """
