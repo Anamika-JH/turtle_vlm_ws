@@ -5,12 +5,12 @@ camera_color: /camera/image_raw
 camera_depth: /camera/depth/image_raw
 
 perception:
-  detection_confidence_threshold: 0.5      # adjust to taste
+  detection_confidence_threshold: 0.55      # adjust to taste
   device_preference: "cuda"                 # or "cpu"
   camera_fx: 268
   camera_fy: 268
   camera_cx: 464
   camera_cy: 400
-  camera_frame: "realsense_link"
+  camera_frame: "realsense_link_optical"
   base_frame: "base_footprint"
   depth_sigma: 15.0
