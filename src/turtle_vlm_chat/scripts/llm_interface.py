@@ -137,6 +137,11 @@ class LLMInterface:
             "\nUser: Emergency halt!\n"
             "Turtle:\n"
             "Action 1: STOP.\n"
+            "\nUser: What have you seen?\n"
+            "Turtle:\n"
+            "Action 1: LIST_SEEN_OBJECTS\n"
+            "\nUser: Which all objects are seen?\n"
+            "Action 1: LIST_SEEN_OBJECTS\n"
         )
 
     def build_combined_system_message(self, input_params: Dict[str, str]) -> str:
