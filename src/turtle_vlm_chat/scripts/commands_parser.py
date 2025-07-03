@@ -108,6 +108,16 @@ class CommandParser:
     def _parse_action(self, description: str) -> Optional[Union[Dict, List]]:
         desc_lower = description.lower().strip()
         desc_lower = desc_lower.strip("* ").strip()
+        
+        RAW_TOKENS = {
+            "list_seen_objects":        "LIST_SEEN_OBJECTS",
+            "report_object_locations":  "REPORT_OBJECT_LOCATIONS",
+            "describe_surroundings":    "DESCRIBE_SURROUNDINGS",
+            "send_image":               "SEND_IMAGE",
+        }
+        token = desc_lower.replace(" ", "_")
+        if token in RAW_TOKENS:
+            return {"action": RAW_TOKENS[token]}
         # 1. Non-parametric, non-movement, and information retrival commands
         if re.fullmatch(self.patterns["send_image"], desc_lower):
             return {'action': 'SEND_IMAGE'}
@@ -119,6 +129,8 @@ class CommandParser:
             return {'action': 'REPORT_OBJECT_LOCATIONS'}
         if re.fullmatch(r'report orientation[.,]?', desc_lower):
             return {'action': 'REPORT_ORIENTATION'}
+        if re.fullmatch(self.patterns["list_destinations"], desc_lower):
+            return {'action': 'LIST_DESTINATIONS'}
         if re.fullmatch(r'list (?:all )?seen objects[.,]?', desc_lower):
             return {'action': 'LIST_SEEN_OBJECTS'}
         if re.fullmatch(r'look around[.,]?', desc_lower):
