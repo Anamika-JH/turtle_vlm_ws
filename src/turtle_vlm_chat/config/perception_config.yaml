@@ -5,7 +5,7 @@ camera_color: /camera/image_raw
 camera_depth: /camera/depth/image_raw
 
 perception:
-  detection_confidence_threshold: 0.55      # adjust to taste
+  detection_confidence_threshold: 0.55      
   device_preference: "cuda"                 # or "cpu"
   camera_fx: 268
   camera_fy: 268
