@@ -19,7 +19,7 @@ A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 
 turtle_vlm_ws/
 ├── .catkin_workspace
 ├── src/
-│   ├── turtle_vlm_chat/             # 🔑 Main package (code + configs)
+│   ├── turtle_vlm_chat/             # Main package (code + configs)
 │   ├── turtle_vlm_gazebo/           # Gazebo world, RViz config, launch files
 │   ├── turtle_vlm_perception/       # Placeholder for future C++/CUDA nodes
 │   └── turtlebot3_description_custom/  # Custom URDF for TurtleBot3 + Realsense
