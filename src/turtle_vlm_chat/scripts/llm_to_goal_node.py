@@ -66,7 +66,6 @@ class LLMToGoalNode:
         if parsed['type'] == 'ACTIONS':
             info_only = all(action['action'] in (
                 'LIST_SEEN_OBJECTS',
-                'DESCRIBE_SURROUNDINGS',
                 'REPORT_COORDINATES',
                 'REPORT_ORIENTATION'
             ) for action in parsed['content'])
