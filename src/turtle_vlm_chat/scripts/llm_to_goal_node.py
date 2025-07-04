@@ -66,7 +66,6 @@ class LLMToGoalNode:
         if parsed['type'] == 'ACTIONS':
             info_only = all(action['action'] in (
                 'LIST_SEEN_OBJECTS',
-                'REPORT_COORDINATES',
                 'REPORT_ORIENTATION'
             ) for action in parsed['content'])
 
@@ -418,47 +417,65 @@ class LLMToGoalNode:
     def _lookup_object_pose(self,
                             object_name: str,
                             *,
-                            max_age: float = 30.0,
-                            min_conf: float = 0.20) -> Optional[PoseStamped]:
-        """
-        Return the most-recent PoseStamped for *object_name* from the perception
-        memory, or None if the object hasn’t been seen recently / confidently
-        enough.
-        """
-        seen = self._query_seen_service(max_age=max_age)   # fresh snapshot
+                            max_age: float = None,
+                            min_conf: float = 0.55) -> Optional[PoseStamped]:
+        seen = self._query_seen_service(max_age=max_age)
 
         for label, entries in seen.items():
             if object_name.lower() not in label.lower():
-                continue                                    # wrong object
-
-            # filter out very low-confidence observations
-            good_entries = [e for e in entries if e["confidence"] >= min_conf]
-            if not good_entries:                            # nothing left → skip
                 continue
 
-            latest = max(good_entries, key=lambda e: e["timestamp"])
+            good = [e for e in entries if e["confidence"] >= min_conf]
+            if not good:
+                continue
+
+            latest = max(good, key=lambda e: e["timestamp"])
             p = latest["pose"]
 
             pose = PoseStamped()
-            pose.header.stamp = rospy.Time.now()
+            pose.header.stamp    = rospy.Time.now()
             pose.header.frame_id = "map"
             pose.pose.position.x = p["x"]
             pose.pose.position.y = p["y"]
-            pose.pose.position.z = p["z"]
-            pose.pose.orientation.w = 1.0
+            pose.pose.position.z = 0.0          
+            pose.pose.orientation.w = 1.0       
             return pose
-
-        # no suitable entry found
         return None
 
-
     def move_to_object(self, object_name):
-        pose = self._lookup_object_pose(object_name)
-        if pose is None:
+        self.trigger_perception_scan()
+        rospy.sleep(1.5)
+        target = self._lookup_object_pose(object_name)
+        if target is None:
             self.speak_and_respond(f"I cannot locate {object_name}.")
             return
-        self.goal_pub.publish(pose)
-        self.speak_and_respond(f"Moving towards the {object_name}.")
+
+        # --- robot’s current pose in map ---
+        try:
+            self.tf_listener.waitForTransform("map", "base_footprint",
+                                            rospy.Time(0), rospy.Duration(0.5))
+            (rx, ry, _), _ = self.tf_listener.lookupTransform("map",
+                                                            "base_footprint",
+                                                            rospy.Time(0))
+        except Exception as e:
+            rospy.logwarn(f"[LLM→Goal] TF lookup failed: {e}")
+            self.speak_and_respond("I cannot determine my current position.")
+            return
+
+        # --- compute bearing from robot → object ---
+        dx = target.pose.position.x - rx
+        dy = target.pose.position.y - ry
+        yaw = math.atan2(dy, dx)          # radians in map frame
+
+        qx, qy, qz, qw = tf.transformations.quaternion_from_euler(0, 0, yaw)
+        target.pose.orientation.x = qx
+        target.pose.orientation.y = qy
+        target.pose.orientation.z = qz
+        target.pose.orientation.w = qw
+
+        # --- publish goal ---
+        self.goal_pub.publish(target)
+        self.speak_and_respond(f"Moving towards the {object_name} and facing it.")
 
 
     def search_for_object(self, object_name):
