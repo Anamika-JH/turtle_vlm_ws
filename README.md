@@ -1,4 +1,4 @@
-# Turtle VLM Workspace – ROS + YOLO + LLM
+# Turtle VLM Workspace
 
 A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 Burger with an Intel RealSense depth camera into a conversational robot:
 
