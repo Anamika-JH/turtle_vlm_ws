@@ -40,6 +40,8 @@ turtle_vlm_ws/
 
 > Tested on **Ubuntu 20.04 + ROS Noetic + Python 3.8**.
 
+![Simulation Preview](images/gazebo_world.jpg)
+
 ```bash
 # 1. clone (already done if you're reading this from your repo clone)
 git clone git@github.com:Anamika-JH/turtle_vlm_ws.git
