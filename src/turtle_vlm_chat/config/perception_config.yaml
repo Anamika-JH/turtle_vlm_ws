@@ -6,7 +6,7 @@ camera_depth: /camera/depth/image_raw
 camera_info:   /camera/camera_info 
 
 perception:
-  detection_confidence_threshold: 0.55      # adjust to taste
+  detection_confidence_threshold: 0.55      
   device_preference: "cuda"                 # or "cpu"
   camera_frame: "realsense_link_optical"
   base_frame: "map"
