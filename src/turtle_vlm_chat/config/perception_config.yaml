@@ -3,14 +3,11 @@ models:
 
 camera_color: /camera/image_raw
 camera_depth: /camera/depth/image_raw
+camera_info:   /camera/camera_info 
 
 perception:
-  detection_confidence_threshold: 0.55      
+  detection_confidence_threshold: 0.55      # adjust to taste
   device_preference: "cuda"                 # or "cpu"
-  camera_fx: 268
-  camera_fy: 268
-  camera_cx: 464
-  camera_cy: 400
   camera_frame: "realsense_link_optical"
-  base_frame: "base_footprint"
+  base_frame: "map"
   depth_sigma: 15.0
