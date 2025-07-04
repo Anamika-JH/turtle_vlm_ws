@@ -13,7 +13,7 @@ import numpy as np
 
 from ultralytics import YOLO              
 from std_srvs.srv import Empty, EmptyResponse
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CameraInfo
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseStamped, PointStamped, Point, Pose, Quaternion
 from cv_bridge import CvBridge
@@ -46,7 +46,30 @@ class ImageManager:
         self.rgb_image = None
         self.depth_image = None
         self.last_image_time = None
+        self.fx = self.fy = self.cx = self.cy = None
+        self.intrinsics_ready = False
 
+        info_topic = rospy.get_param("topics/camera_info", "/camera/camera_info")
+        rospy.Subscriber(info_topic,
+                         CameraInfo,
+                         self.camera_info_callback,
+                         queue_size=1)
+
+
+    def camera_info_callback(self, msg):
+        K = msg.K               # 3×3 row-major camera matrix
+        self.fx, self.fy = K[0], K[4]
+        self.cx, self.cy = K[2], K[5]
+        self.intrinsics_ready = True
+        rospy.loginfo_once(
+            f"[CameraInfo] fx={self.fx:.1f}, fy={self.fy:.1f}, "
+            f"cx={self.cx:.1f}, cy={self.cy:.1f}")
+    
+    def get_intrinsics(self):
+        if not self.intrinsics_ready:
+            raise RuntimeError("Camera intrinsics not received yet")
+        return self.fx, self.fy, self.cx, self.cy
+    
     def _depth_to_metres(self, depth_msg):
         depth = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
         if depth_msg.encoding == "16UC1":       
@@ -64,24 +87,19 @@ class ImageManager:
 
 
 class DepthEstimator:
-    def __init__(self, fx, fy, cx, cy, mono_model, mono_transform, device):
-        self.fx = fx
-        self.fy = fy
-        self.cx = cx
-        self.cy = cy
-        self.mono_model = mono_model
+    def __init__(self, get_intrinsics_fn, mono_model, mono_transform, device):
+        self.get_intrinsics_fn = get_intrinsics_fn
+        self.mono_model   = mono_model
         self.mono_transform = mono_transform
-        self.device = device
+        self.device       = device
 
     def pixel_to_3d_point(self, u, v, depth):
-        """Project pixel (u,v) + depth to 3-D point in the camera frame."""
         if depth <= 0.0 or not np.isfinite(depth):
             return None
-        x = (u - self.cx) * depth / self.fx
-        y = (v - self.cy) * depth / self.fy
-        z = depth
-        rospy.loginfo(f"[DEBUG] pixel=({u},{v})  depth={depth:.2f} m")
-        return np.array([x, y, z])
+        fx, fy, cx, cy = self.get_intrinsics_fn()
+        x = (u - cx) * depth / fx
+        y = (v - cy) * depth / fy
+        return np.array([x, y, depth])
 
     def get_valid_depth_value(self, depth_image, x, y, radius=5):
         h, w = depth_image.shape
@@ -113,11 +131,11 @@ class ObjectTracker:
         self.kf.R = np.eye(3) * 0.1
         self.kf.P[3:, 3:] *= 1e3
         self.kf.Q[3:, 3:] = process_noise
-        self.kf.x[:3] = initial_pose
+        self.kf.x[:3] = initial_pose.reshape(3, 1)
 
     def update(self, measurement):
         self.kf.predict()
-        self.kf.update(measurement)
+        self.kf.update(np.array(measurement).reshape(3, 1))
 
 class PerceptionModule:
     def __init__(self, data_logger=None):
@@ -125,7 +143,7 @@ class PerceptionModule:
         self.listener = tf.TransformListener()
         self.image_manager = ImageManager()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+        self.trackers = {}
         # Load YOLO model
         yolo_ckpt = rospy.get_param("models/yolo_checkpoint", "yolov8x.pt")
         self.yolo_model = YOLO(yolo_ckpt)
@@ -134,15 +152,12 @@ class PerceptionModule:
         self.mono_model = torch.hub.load('intel-isl/MiDaS', 'MiDaS_small').to(self.device)
         self.mono_transform = torch.hub.load('intel-isl/MiDaS', 'transforms').small_transform
         self.depth_estimator = DepthEstimator(
-            fx=rospy.get_param("perception/camera_fx", 268),
-            fy=rospy.get_param("perception/camera_fy", 268),
-            cx=rospy.get_param("perception/camera_cx", 464),
-            cy=rospy.get_param("perception/camera_cy", 400),
+            get_intrinsics_fn=self.image_manager.get_intrinsics,
             mono_model=self.mono_model,
             mono_transform=self.mono_transform,
             device=self.device
         )
-        self.base_frame = rospy.get_param("perception/base_frame", "base_footprint")
+        self.base_frame = rospy.get_param("perception/base_frame", "map")
         self.camera_frame = rospy.get_param("perception/camera_frame", "realsense_link_optical")
         self.seen_objects = {}
         self.image_publisher = rospy.Publisher("/llm_image_output", Image, queue_size=10)
@@ -183,80 +198,70 @@ class PerceptionModule:
 
     def detect_objects(self):
         """
-        Run YOLO, compute a 3-D pose for every detection that has
-        (i) confidence >= thresh   and   (ii) a valid depth reading.
-        Only those detections are visualised and stored.
-        Returns the list of accepted detections so other modules
-        (e.g. llm_to_goal_node.py) can use it immediately.
+        Run YOLO, triangulate depth, smooth each object’s 3-D position
+        with a Kalman filter, and store / visualise the results.
         """
         if self.image_manager.rgb_image is None:
             rospy.logwarn("[YOLO-VLM] No RGB image for detection.")
             return []
 
-        rgb  = self.image_manager.rgb_image.copy()
-        dets = self.yolo_model(rgb, verbose=False)[0]          # first batch
+        if not self.image_manager.intrinsics_ready:
+            rospy.logwarn_once("[YOLO-VLM] Waiting for /camera/camera_info …")
+            return []
+        
+        rgb       = self.image_manager.rgb_image.copy()
+        dets      = self.yolo_model(rgb, verbose=False)[0]      # first batch
         depth_img = self.image_manager.depth_image
 
         accepted, vis_boxes, vis_labels = [], [], []
 
         for det in dets.boxes:
             x1, y1, x2, y2 = map(int, det.xyxy[0].tolist())
-            cls_id = int(det.cls)
-            conf   = float(det.conf)
+            cls_id  = int(det.cls)
+            conf    = float(det.conf)
 
             if conf < self.detection_confidence_threshold:
                 continue
 
             label = self.yolo_model.names[cls_id]
 
-
-            BLACKLIST        = {"potted plant", "cup", "umbrella"}     
-            REMAP_TO_TRASH   = {"potted plant"}      # treat as trash-can
+            BLACKLIST      = {"potted plant", "cup", "umbrella",
+                            "sign stop", "light traffic", "car", "sink", "vase", "airplane"}
+            REMAP_TO_TRASH = {"potted plant"}
 
             if label in BLACKLIST:
-                continue                    # skip this detection entirely
-
+                continue
             if label in REMAP_TO_TRASH:
                 label = "trash can"
 
-            # ----------------------------------------------------------
-            #   1.  DEPTH → CAMERA XYZ
-            # ----------------------------------------------------------
+            # ---------- 1. depth → camera xyz ----------
             if depth_img is None:
                 rospy.logwarn_once("[YOLO-VLM] Depth stream not yet available.")
                 continue
 
-            # sample a square patch around the centre of the box
-            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-            depth_val = self.depth_estimator.get_valid_depth_value(depth_img,
-                                                                cx, cy,
-                                                                radius=7)
+            cx, cy   = (x1 + x2) // 2, (y1 + y2) // 2
+            depth_val = self.depth_estimator.get_valid_depth_value(depth_img, cx, cy, radius=7)
 
-            # fallback #1: median of the *whole* bounding box
             if depth_val is None:
                 box_patch = depth_img[max(0, y1):y2, max(0, x1):x2]
                 vals = box_patch[np.isfinite(box_patch) & (box_patch > 0)]
                 depth_val = float(np.median(vals)) if vals.size else None
 
-            # fallback #2: MiDaS monocular depth
-            if depth_val is None:
-                rospy.logdebug("[YOLO-VLM] Falling back to MiDaS for %s", label)
-                mask = np.zeros(depth_img.shape, np.uint8)
+            if depth_val is None:          # MiDaS fallback
+                mask          = np.zeros(depth_img.shape, np.uint8)
                 mask[y1:y2, x1:x2] = 1
-                depth_val = self.depth_estimator.monocular_depth_estimate(rgb, mask)
+                depth_val     = self.depth_estimator.monocular_depth_estimate(rgb, mask)
 
             if depth_val is None:
-                rospy.logdebug("[YOLO-VLM] No valid depth for %s — skipping.", label)
                 continue
 
             cam_xyz = self.depth_estimator.pixel_to_3d_point(cx, cy, depth_val)
             if cam_xyz is None:
                 continue
 
-            # ----------------------------------------------------------
-            #   2.  TF transform  →  <base_frame>
-            # ----------------------------------------------------------
+            # ---------- 2. camera xyz → <base_frame> ----------
             try:
+                # use the RGB stamp for TF accuracy
                 now = rospy.Time.now()
                 self.listener.waitForTransform(self.base_frame,
                                             self.camera_frame,
@@ -267,28 +272,39 @@ class PerceptionModule:
                                     point=Point(*cam_xyz))
                 pt_base = self.listener.transformPoint(self.base_frame, pt_cam)
 
+                raw_pos = np.array([pt_base.point.x,
+                                    pt_base.point.y,
+                                    pt_base.point.z])
+
+                # ---------- 2½.  Kalman smoothing ----------
+                key = label.lower()
+                if not hasattr(self, "trackers"):
+                    self.trackers = {}                     # first call: create dict
+                if key not in self.trackers:
+                    self.trackers[key] = ObjectTracker(raw_pos)
+                else:
+                    self.trackers[key].update(raw_pos)
+                    raw_pos = self.trackers[key].kf.x[:3]  # use filtered value
+
+                # PoseStamped for downstream use
                 pose_msg = PoseStamped(
                     header=Header(stamp=now, frame_id=self.base_frame),
-                    pose  = Pose(position    = pt_base.point,
-                                orientation = Quaternion(w=1.0))
+                    pose  = Pose(position=Point(*raw_pos),
+                                orientation=Quaternion(w=1.0))
                 )
 
-                # store in memory for navigation
-                key = label.lower()
+                # ---------- 3. store in memory ----------
                 self.seen_objects.setdefault(key, []).append(
-                    {"pose": {"x": pt_base.point.x,
-                            "y": pt_base.point.y,
-                            "z": pt_base.point.z},
+                    {"pose": {"x": float(raw_pos[0]),
+                            "y": float(raw_pos[1]),
+                            "z": float(raw_pos[2])},
                     "confidence": conf,
                     "timestamp": now.to_sec()}
                 )
 
-                # ------------------------------------------------------
-                #   3.  Prepare overlay
-                # ------------------------------------------------------
-                vis_boxes .append([x1, y1, x2, y2])
+                # ---------- 4. overlay ----------
+                vis_boxes.append([x1, y1, x2, y2])
                 vis_labels.append(f"{label} {conf:.2f}")
-
                 accepted.append({"label": label,
                                 "confidence": conf,
                                 "pose": pose_msg})
@@ -297,9 +313,9 @@ class PerceptionModule:
                     tf.ConnectivityException, tf.ExtrapolationException) as tf_err:
                 rospy.logwarn("[YOLO-VLM] TF failed for %s: %s", label, tf_err)
 
-        # draw only the accepted detections (those with a valid pose)
         self.publish_overlay(rgb, vis_boxes, vis_labels)
         return accepted
+
 
     def publish_overlay(self, image, boxes, labels):
         for (x1, y1, x2, y2), label in zip(boxes, labels):
