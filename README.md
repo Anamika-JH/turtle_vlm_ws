@@ -8,8 +8,8 @@ A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 
 * **Chat GUI:** Tkinter interface with speech I/O and image previews.
 * **Gazebo world:** ready-to-run CPS lab environment with RViz configs.
 
-<<p align="center">
-  <img src="images/preview.gif" width="650" alt="Turtle VLM Workspace Preview">
+<p align="center">
+  <img src="images/preview.gif" alt="Turtle VLM Workspace Preview">
 </p>
 
 ---
