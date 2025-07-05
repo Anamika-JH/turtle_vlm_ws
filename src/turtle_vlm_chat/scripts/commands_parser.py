@@ -67,11 +67,30 @@ class CommandParser:
         return action
 
     def _parse_circular_motion(self, match: re.Match, description: str) -> Dict:
+        def _convert_speed_to_mps(val: float, unit: str) -> float:
+            unit = unit.strip().lower()
+            if unit == "m/s":
+                return val
+            elif unit == "km/h":
+                return val * 1000 / 3600
+            elif unit == "mph":
+                return val * 0.44704
+            elif unit == "ft/s":
+                return val * 0.3048
+            elif unit == "deg/s":
+                rospy.logwarn("deg/s is angular speed. Approximating linear speed as 0.2 m/s.")
+                return 0.2  # Or raise ValueError for stricter handling
+            else:
+                rospy.logwarn(f"Unknown speed unit '{unit}', assuming m/s.")
+                return val
+
         radius = 1.0  # Default radius
         if match.group(1):
             radius = float(match.group(1))
+
         speed_input = match.group(2)
         speed_unit = match.group(3) or 'm/s'
+
         if not speed_input:
             speed = self.linear_speed
         elif speed_input.lower() in ('maximum', 'max'):
@@ -80,13 +99,14 @@ class CommandParser:
             speed = self.minimum_speed
         else:
             try:
-                speed = float(speed_input)
+                speed_val = float(speed_input)
+                speed = _convert_speed_to_mps(speed_val, speed_unit)
             except (TypeError, ValueError):
                 speed = self.linear_speed
 
         # Angle determination
         angle = 360.0  # Default full circle
-        desc_lower = description.lower() 
+        desc_lower = description.lower()
         if "half" in desc_lower or "semi" in desc_lower:
             angle = 180.0
         elif "arc" in desc_lower:
@@ -96,11 +116,17 @@ class CommandParser:
                 angle = 90.0
         elif angle_match := re.search(r'(\d+)\s*degrees?', description, re.IGNORECASE):
             angle = float(angle_match.group(1))
+
+        if "counter" in desc_lower or "anticlockwise" in desc_lower:
+            direction = "counter-clockwise"
+        else:
+            direction = "clockwise"
+
         return {
             'action': 'CIRCULAR_MOTION',
             'radius': radius,
-            'speed': speed,
-            'speed_unit': speed_unit,
+            'speed': speed,  # in m/s now
+            'speed_unit': 'm/s',  # for consistency
             'angle': angle,
             'direction': 'clockwise'
         }
