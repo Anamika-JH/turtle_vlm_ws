@@ -110,10 +110,12 @@ class LLMToGoalNode:
             rospy.loginfo(f"Waiting for {action.get('duration', 1.0)} seconds")
             time.sleep(action.get('duration', 1.0))
         elif act == "CIRCULAR_MOTION":
+            direction = action.get("direction", "clockwise")
             self.move_in_circle(
                 radius=action.get('radius', 1.0),
                 speed=action.get('speed', 0.2),
-                angle=action.get('angle', 360.0)
+                angle=action.get('angle', 360.0),
+                clockwise=(direction == "clockwise")
             )
         #elif act == "DESCRIBE_SURROUNDINGS":
             #self.describe_surroundings()
@@ -224,7 +226,7 @@ class LLMToGoalNode:
 
         self.stop_motion()
 
-    def move_in_circle(self, radius=1.0, speed=0.2, angle=360.0):
+    def move_in_circle(self, radius=1.0, speed=0.2, angle=360.0, clockwise=True):
         if self.should_stop:
             rospy.loginfo("STOP flag set. Aborting move_in_circle.")
             return
@@ -233,7 +235,7 @@ class LLMToGoalNode:
 
         twist = Twist()
         twist.linear.x = speed
-        twist.angular.z = speed / radius  # omega = v / r
+        twist.angular.z = -abs(speed / radius) if clockwise else abs(speed / radius)
 
         arc_length = math.radians(angle) * radius
         duration = arc_length / speed
