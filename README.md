@@ -9,7 +9,7 @@ A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 
 * **Gazebo world:** ready-to-run CPS lab environment with RViz configs.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Anamika-JH/turtle_vlm_ws/images/preview.gif" width="650">
+  <img src="https://raw.githubusercontent.com/Anamika-JH/turtle_vlm_ws/images/preview.gif" width="650" alt="Turtle VLM Preview">
 </p>
 
 ---
