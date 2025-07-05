@@ -1,4 +1,7 @@
 # Turtle VLM Workspace
+<p align="center">
+  <img src="images/preview.gif" alt="Turtle VLM Workspace Preview">
+</p>
 
 A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 Burger with an Intel RealSense depth camera into a conversational robot:
 
@@ -7,11 +10,6 @@ A complete **ROS Noetic** workspace that turns a (simulated or real) TurtleBot3 
 * **Control & Navigation:** turns these actions into `move_base` goals or direct `cmd_vel` twists.
 * **Chat GUI:** Tkinter interface with speech I/O and image previews.
 * **Gazebo world:** ready-to-run CPS lab environment with RViz configs.
-
-<p align="center">
-  <img src="images/preview.gif" alt="Turtle VLM Workspace Preview">
-</p>
-
 ---
 
 ### Directory layout
